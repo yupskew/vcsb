@@ -63,7 +63,11 @@ for (let i = 0; i < tokens.length; i++) {
         if (!channel) channel = g.channels.cache.get(channelId);
       }
     }
-    if (!channel) channel = channelId; // fallback to id, let library try
+    if (!channel) {
+      console.log(`[${client.user?.tag}] channel ${channelId} not cached, using gateway join`);
+      client._gatewayJoin(guildId, channelId);
+      return null;
+    }
     // try library voice (UDP), but don't fail gateway join if UDP times out
     try {
       const p = client.voice.joinChannel(channel, { selfDeaf: false, selfMute: true });
@@ -175,13 +179,6 @@ for (let i = 0; i < tokens.length; i++) {
   });
 
   // keep bots in VC — auto-rejoin only if stable >10s, not on immediate UDP fail
-  client._lastJoinAt = 0;
-  const origJoinSafe = client._joinChannelSafe;
-  client._joinChannelSafe = async (channelId) => {
-    const r = await origJoinSafe(channelId);
-    client._lastJoinAt = Date.now();
-    return r;
-  };
   client.on('raw', (packet) => {
     if (packet.t === 'VOICE_STATE_UPDATE' && packet.d?.user_id === client.user?.id) {
       if (!packet.d?.channel_id) {
