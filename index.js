@@ -40,6 +40,7 @@ for (let i = 0; i < tokens.length; i++) {
   client._manualLeave = false;
   // raw gateway join (no UDP) - makes bot appear in VC and stay
   client._lastGuildId = null;
+  client._rejoinLock = false;
   client._gatewayJoin = (guildId, channelId) => {
     try {
       const payload = { op: 4, d: { guild_id: guildId, channel_id: channelId, self_mute: true, self_deaf: true } };
@@ -142,7 +143,7 @@ for (let i = 0; i < tokens.length; i++) {
     }
   });
 
-  // always rejoin FIXED VC if kicked/disconnected (never stay outside)
+  // always rejoin FIXED VC if kicked/disconnected (never stay outside) — instant, deduped
   client.on('raw', (packet) => {
     if (packet.t === 'VOICE_STATE_UPDATE' && packet.d?.user_id === client.user?.id) {
       if (!packet.d?.channel_id) {
@@ -150,12 +151,13 @@ for (let i = 0; i < tokens.length; i++) {
           console.log(`[${client.user?.tag}] VOICE_STATE_UPDATE: left (manual leave)`);
           return;
         }
-        console.log(`[${client.user?.tag}] VOICE_STATE_UPDATE: kicked/disconnected, rejoining fixed ${FIXED_VC_ID} in 2s`);
+        if (client._rejoinLock) return;
+        client._rejoinLock = true; setTimeout(() => client._rejoinLock = false, 3000);
+        console.log(`[${client.user?.tag}] VOICE_STATE_UPDATE: kicked, rejoining fixed ${FIXED_VC_ID} in 0.5s`);
         setTimeout(() => {
           if (client._manualLeave) return;
-          // always rejoin fixed VC, not last
           client._joinChannelSafe(FIXED_GUILD_ID, FIXED_VC_ID).then(() => console.log(`[${client.user?.tag}] auto-rejoined fixed ${FIXED_VC_ID}`)).catch((e) => console.error(`[${client.user?.tag}] auto-rejoin failed:`, e?.message || e));
-        }, 2000 + rand(0, 1000));
+        }, 500 + rand(0, 400));
       }
     }
     if (packet.t === 'VOICE_SERVER_UPDATE') {
@@ -167,11 +169,13 @@ for (let i = 0; i < tokens.length; i++) {
     if (newState.member?.id === client.user?.id) {
       if (!newState.channelId && oldState.channelId) {
         if (client._manualLeave) return;
-        console.log(`[${client.user?.tag}] voiceStateUpdate: left ${oldState.channelId} -> rejoin fixed ${FIXED_VC_ID} in 2s`);
+        if (client._rejoinLock) return;
+        client._rejoinLock = true; setTimeout(() => client._rejoinLock = false, 3000);
+        console.log(`[${client.user?.tag}] voiceStateUpdate: left ${oldState.channelId} -> rejoin fixed ${FIXED_VC_ID} in 0.5s`);
         setTimeout(() => {
           if (client._manualLeave) return;
           client._joinChannelSafe(FIXED_GUILD_ID, FIXED_VC_ID).then(() => console.log(`[${client.user?.tag}] voiceStateUpdate re-joined fixed ${FIXED_VC_ID}`)).catch((e) => console.error(`[${client.user?.tag}] rejoin failed:`, e?.message || e));
-        }, 2000 + rand(0, 1000));
+        }, 500 + rand(0, 400));
       } else if (newState.channelId) {
         client._lastVcId = newState.channelId;
         client._lastGuildId = newState.guild?.id || client._lastGuildId;
