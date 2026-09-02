@@ -10,6 +10,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
 const instances = [];
+let joinLock = false;
+let leaveLock = false;
 
 for (let i = 0; i < tokens.length; i++) {
   const token = tokens[i];
@@ -58,31 +60,45 @@ for (let i = 0; i < tokens.length; i++) {
     const cmd = args.shift().toLowerCase();
 
     if (cmd === 'join') {
+      if (joinLock) return;
+      joinLock = true;
+      setTimeout(() => (joinLock = false), 5000);
+      // only first ready instance handles it to avoid 9x spam
+      if (instances[0] !== client && instances.find(c => c.user)?.user?.id !== client.user?.id) {
+        // allow first bot that received it, but debounce via lock covers it
+      }
       const guild = message.guild;
-      if (!guild) return;
+      if (!guild) { joinLock = false; return; }
       const vc = message.member?.voice?.channel;
       if (!vc) {
         console.log(`[${client.user?.tag}] !join failed: you not in VC`);
+        joinLock = false;
         return;
       }
       console.log(`[${client.user?.tag}] !join -> ${vc.id} (${vc.name}) by ${message.author.tag} — joining ${instances.length} bots`);
       for (const inst of instances) {
+        if (!inst.user) { console.log(`[${inst._botCommand}] skip (not logged in)`); continue; }
         try {
-          await sleep(rand(50, 200));
+          await sleep(rand(350, 900));
           await inst._joinChannelSafe(vc.id);
           console.log(`[${inst.user?.tag}] joined ${vc.name} (${vc.id})`);
         } catch (e) {
           console.error(`[${inst.user?.tag || inst._botCommand}] join failed:`, e?.message || e);
         }
       }
+      setTimeout(() => (joinLock = false), 2000);
       return;
     }
 
     if (cmd === 'leave') {
+      if (leaveLock) return;
+      leaveLock = true;
+      setTimeout(() => (leaveLock = false), 5000);
       console.log(`[${client.user?.tag}] !leave by ${message.author.tag}`);
       for (const inst of instances) {
         try {
-          await sleep(rand(50, 200));
+          await sleep(rand(150, 400));
+          if (!inst.user) continue;
           console.log(`[${inst.user?.tag}] leaving VC`);
           inst._manualLeave = true;
           inst._lastVcId = null;
@@ -91,6 +107,7 @@ for (let i = 0; i < tokens.length; i++) {
           console.error(`[${inst.user?.tag || inst._botCommand}] leave failed:`, e?.message || e);
         }
       }
+      setTimeout(() => (leaveLock = false), 2000);
       return;
     }
 
@@ -164,7 +181,15 @@ for (let i = 0; i < tokens.length; i++) {
   instances.push(client);
 }
 
-process.on('unhandledRejection', (e) => console.error('unhandledRejection:', e?.message || e));
-process.on('uncaughtException', (e) => console.error('uncaughtException:', e?.message || e));
+process.on('unhandledRejection', (e) => {
+  const msg = e?.message || String(e);
+  if (msg.includes('WebSocket was closed before')) return;
+  console.error('unhandledRejection:', msg);
+});
+process.on('uncaughtException', (e) => {
+  const msg = e?.message || String(e);
+  if (msg.includes('WebSocket was closed before') || msg.includes('Connection not established')) return;
+  console.error('uncaughtException:', msg);
+});
 
 console.log(`Starting ${tokens.length} bot(s) | prefix=${prefix} | owners=${ownerIds.join(',') || 'none'} | commands=${commands.join(',')}`);
