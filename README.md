@@ -29,7 +29,7 @@ If both print a version number, you're good to go.
    Open your terminal and run:
 
    ```bash
-   git clone git@github.com:yupskew/vcsb.git
+   git clone https://github.com/yupskew/vcsb.git
    cd vcsb
    ```
 
