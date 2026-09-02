@@ -4,7 +4,7 @@ const { Client } = require('discord.js-selfbot-v13');
 const tokens = process.env.TOKENS.split(',').map(t => t.trim()).filter(Boolean);
 const commands = process.env.COMMANDS.split(',').map(c => c.trim().toLowerCase());
 const prefix = process.env.PREFIX || '!';
-const ownerId = process.env.OWNER_ID || '';
+const ownerIds = (process.env.OWNER_ID || '').split(',').map(s => s.trim()).filter(Boolean);
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -36,7 +36,7 @@ for (let i = 0; i < tokens.length; i++) {
 
   client.on('messageCreate', async (message) => {
     if (!message.content.startsWith(prefix)) return;
-    if (ownerId && message.author.id !== ownerId) return;
+    if (ownerIds.length && !ownerIds.includes(message.author.id)) return;
 
     const args = message.content.slice(prefix.length).trim().split(/ +/);
     const cmd = args.shift().toLowerCase();
