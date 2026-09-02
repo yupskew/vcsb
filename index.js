@@ -12,6 +12,7 @@ const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const instances = [];
 let joinLock = false;
 let leaveLock = false;
+let lastJoinMsgId = null;
 
 for (let i = 0; i < tokens.length; i++) {
   const token = tokens[i];
@@ -35,17 +36,47 @@ for (let i = 0; i < tokens.length; i++) {
   client._tokenIndex = i;
   client._lastVcId = null;
   client._manualLeave = false;
-  client._joinChannelSafe = async (channelId) => {
+  // raw gateway join (no UDP) - makes bot appear in VC and stay
+  client._gatewayJoin = (guildId, channelId) => {
+    try {
+      // discord.js-selfbot uses ws.send for voice state
+      if (client.ws?.send) client.ws.send({ op: 4, d: { guild_id: guildId, channel_id: channelId, self_mute: true, self_deaf: false } });
+      else if (client._ws?.send) client._ws.send({ op: 4, d: { guild_id: guildId, channel_id: channelId, self_mute: true, self_deaf: false } });
+    } catch {}
+    client._lastVcId = channelId;
+    client._manualLeave = false;
+    client._lastJoinAt = Date.now();
+  };
+  client._joinChannelSafe = async (guildId, channelId) => {
     client._manualLeave = false;
     client._lastVcId = channelId;
-    const conn = await client.voice.joinChannel(channelId, { selfDeaf: false, selfMute: true });
-    // attach once per connection
-    if (conn && !conn._logged) {
-      conn._logged = true;
-      conn.on('error', (e) => console.error(`[${client.user?.tag}] voice error:`, e?.message || e));
-      // discord.js-selfbot voice emits 'stateChange' / 'disconnect' via debug; log via polling
+    client._lastJoinAt = Date.now();
+    // try library voice (UDP), but don't fail gateway join if UDP times out
+    try {
+      const p = client.voice.joinChannel(channelId, { selfDeaf: false, selfMute: true });
+      // race with 4s timeout - keep gateway join even if UDP hangs
+      const conn = await Promise.race([
+        p,
+        new Promise((_, rej) => setTimeout(() => rej(new Error('voice UDP timeout (ignored, keeping gateway)')), 4000))
+      ]);
+      if (conn && !conn._logged) {
+        conn._logged = true;
+        conn.on('error', (e) => {
+          const m = e?.message || String(e);
+          if (m.includes('Connection not established') || m.includes('WebSocket was closed')) return;
+          console.error(`[${client.user?.tag}] voice error:`, m);
+        });
+      }
+      return conn;
+    } catch (e) {
+      const m = e?.message || String(e);
+      if (m.includes('voice UDP timeout')) {
+        console.log(`[${client.user?.tag}] UDP timeout, keeping gateway in ${channelId} (will appear in VC)`);
+        client._gatewayJoin(guildId, channelId);
+        return null;
+      }
+      throw e;
     }
-    return conn;
   };
 
   client.on('ready', async () => {
@@ -60,7 +91,9 @@ for (let i = 0; i < tokens.length; i++) {
     const cmd = args.shift().toLowerCase();
 
     if (cmd === 'join') {
+      if (message.id === lastJoinMsgId) { console.log(`[${client.user?.tag}] !join dedup ${message.id}`); return; }
       if (joinLock) { console.log(`[${client.user?.tag}] !join ignored (debounce)`); return; }
+      lastJoinMsgId = message.id;
       joinLock = true;
       setTimeout(() => (joinLock = false), 10000);
       const guild = message.guild;
@@ -75,13 +108,13 @@ for (let i = 0; i < tokens.length; i++) {
       for (const inst of instances) {
         if (!inst.user) { console.log(`[${inst._botCommand}] skip (not logged in)`); continue; }
         try {
-          await sleep(rand(1200, 1800));
-          await inst._joinChannelSafe(vc.id);
+          await sleep(rand(900, 1400));
+          await inst._joinChannelSafe(guild.id, vc.id);
           console.log(`[${inst.user?.tag}] joined ${vc.name} (${vc.id})`);
         } catch (e) {
           const msg = e?.message || String(e);
-          if (msg.includes('Connection not established')) {
-            console.error(`[${inst.user?.tag || inst._botCommand}] join timeout (UDP) - will retry later`);
+          if (msg.includes('Connection not established') || msg.includes('UDP timeout')) {
+            console.log(`[${inst.user?.tag || inst._botCommand}] UDP timeout, kept gateway`);
           } else {
             console.error(`[${inst.user?.tag || inst._botCommand}] join failed:`, msg);
           }
@@ -121,7 +154,7 @@ for (let i = 0; i < tokens.length; i++) {
     try {
       console.log(`[${client.user?.tag}] !${client._botCommand} -> joining ${vc.name} (${vc.id})`);
       await sleep(rand(50, 200));
-      await client._joinChannelSafe(vc.id);
+      await client._joinChannelSafe(guild.id, vc.id);
       console.log(`[${client.user?.tag}] joined ${vc.name}`);
     } catch (e) {
       console.error(`[${client.user?.tag}] join failed:`, e?.message || e);
