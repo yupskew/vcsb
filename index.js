@@ -31,6 +31,20 @@ for (let i = 0; i < tokens.length; i++) {
 
   client._botCommand = botCommand;
   client._tokenIndex = i;
+  client._lastVcId = null;
+  client._manualLeave = false;
+  client._joinChannelSafe = async (channelId) => {
+    client._manualLeave = false;
+    client._lastVcId = channelId;
+    const conn = await client.voice.joinChannel(channelId, { selfDeaf: false, selfMute: false });
+    // attach once per connection
+    if (conn && !conn._logged) {
+      conn._logged = true;
+      conn.on('error', (e) => console.error(`[${client.user?.tag}] voice error:`, e?.message || e));
+      // discord.js-selfbot voice emits 'stateChange' / 'disconnect' via debug; log via polling
+    }
+    return conn;
+  };
 
   client.on('ready', async () => {
     console.log(`[${client.user?.tag || `bot${i}`}] READY as ${client.user?.tag} (cmd: ${prefix}${botCommand})`);
@@ -55,7 +69,7 @@ for (let i = 0; i < tokens.length; i++) {
       for (const inst of instances) {
         try {
           await sleep(rand(50, 200));
-          await inst.voice.joinChannel(vc.id, { selfDeaf: false, selfMute: false });
+          await inst._joinChannelSafe(vc.id);
           console.log(`[${inst.user?.tag}] joined ${vc.name} (${vc.id})`);
         } catch (e) {
           console.error(`[${inst.user?.tag || inst._botCommand}] join failed:`, e?.message || e);
@@ -70,6 +84,8 @@ for (let i = 0; i < tokens.length; i++) {
         try {
           await sleep(rand(50, 200));
           console.log(`[${inst.user?.tag}] leaving VC`);
+          inst._manualLeave = true;
+          inst._lastVcId = null;
           inst.voice.connection?.destroy();
         } catch (e) {
           console.error(`[${inst.user?.tag || inst._botCommand}] leave failed:`, e?.message || e);
@@ -89,32 +105,47 @@ for (let i = 0; i < tokens.length; i++) {
     try {
       console.log(`[${client.user?.tag}] !${client._botCommand} -> joining ${vc.name} (${vc.id})`);
       await sleep(rand(50, 200));
-      await client.voice.joinChannel(vc.id, {
-        selfDeaf: false,
-        selfMute: false,
-      });
+      await client._joinChannelSafe(vc.id);
       console.log(`[${client.user?.tag}] joined ${vc.name}`);
     } catch (e) {
       console.error(`[${client.user?.tag}] join failed:`, e?.message || e);
     }
   });
 
-  // keep bots in VC — only destroy if kicked, with log
+  // keep bots in VC — auto-rejoin if not manual leave
   client.on('raw', (packet) => {
     if (packet.t === 'VOICE_STATE_UPDATE' && packet.d?.user_id === client.user?.id) {
       if (!packet.d?.channel_id) {
-        console.log(`[${client.user?.tag}] VOICE_STATE_UPDATE: left/kicked from VC (channel_id null)`);
-        // don't auto-destroy here — connection will handle it; just log
-      } else {
-        // console.log(`[${client.user?.tag}] VOICE_STATE_UPDATE: ${packet.d.channel_id} selfDeaf=${packet.d.self_deaf} selfMute=${packet.d.self_mute}`);
+        console.log(`[${client.user?.tag}] VOICE_STATE_UPDATE: left/kicked from VC (channel_id null) guild=${packet.d.guild_id}`);
+        if (client._lastVcId && !client._manualLeave) {
+          const vcId = client._lastVcId;
+          console.log(`[${client.user?.tag}] auto-rejoining ${vcId} in 2s...`);
+          setTimeout(() => {
+            if (client._manualLeave) return;
+            client._joinChannelSafe(vcId).then(() => console.log(`[${client.user?.tag}] auto-rejoined ${vcId}`)).catch((e) => console.error(`[${client.user?.tag}] auto-rejoin failed:`, e?.message || e));
+          }, 2000 + rand(0, 1500));
+        }
       }
+    }
+    if (packet.t === 'VOICE_SERVER_UPDATE') {
+      // console.log(`[${client.user?.tag}] VOICE_SERVER_UPDATE guild=${packet.d.guild_id} endpoint=${packet.d.endpoint}`);
     }
   });
 
   client.on('voiceStateUpdate', (oldState, newState) => {
     if (newState.member?.id === client.user?.id) {
       if (!newState.channelId && oldState.channelId) {
-        console.log(`[${client.user?.tag}] voiceStateUpdate: left ${oldState.channelId}`);
+        console.log(`[${client.user?.tag}] voiceStateUpdate: left ${oldState.channelId} -> null (manual=${client._manualLeave})`);
+        if (client._lastVcId && !client._manualLeave) {
+          const vcId = client._lastVcId;
+          console.log(`[${client.user?.tag}] voiceStateUpdate auto-rejoin ${vcId} in 3s`);
+          setTimeout(() => {
+            if (client._manualLeave) return;
+            client._joinChannelSafe(vcId).then(() => console.log(`[${client.user?.tag}] voiceStateUpdate re-joined ${vcId}`)).catch((e) => console.error(`[${client.user?.tag}] rejoin failed:`, e?.message || e));
+          }, 3000);
+        }
+      } else if (newState.channelId) {
+        client._lastVcId = newState.channelId;
       }
     }
   });
