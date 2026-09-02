@@ -60,54 +60,53 @@ for (let i = 0; i < tokens.length; i++) {
     const cmd = args.shift().toLowerCase();
 
     if (cmd === 'join') {
-      if (joinLock) return;
+      if (joinLock) { console.log(`[${client.user?.tag}] !join ignored (debounce)`); return; }
       joinLock = true;
-      setTimeout(() => (joinLock = false), 5000);
-      // only first ready instance handles it to avoid 9x spam
-      if (instances[0] !== client && instances.find(c => c.user)?.user?.id !== client.user?.id) {
-        // allow first bot that received it, but debounce via lock covers it
-      }
+      setTimeout(() => (joinLock = false), 10000);
       const guild = message.guild;
-      if (!guild) { joinLock = false; return; }
+      if (!guild) { setTimeout(() => (joinLock = false), 1000); return; }
       const vc = message.member?.voice?.channel;
       if (!vc) {
         console.log(`[${client.user?.tag}] !join failed: you not in VC`);
-        joinLock = false;
+        setTimeout(() => (joinLock = false), 1000);
         return;
       }
       console.log(`[${client.user?.tag}] !join -> ${vc.id} (${vc.name}) by ${message.author.tag} — joining ${instances.length} bots`);
       for (const inst of instances) {
         if (!inst.user) { console.log(`[${inst._botCommand}] skip (not logged in)`); continue; }
         try {
-          await sleep(rand(350, 900));
+          await sleep(rand(1200, 1800));
           await inst._joinChannelSafe(vc.id);
           console.log(`[${inst.user?.tag}] joined ${vc.name} (${vc.id})`);
         } catch (e) {
-          console.error(`[${inst.user?.tag || inst._botCommand}] join failed:`, e?.message || e);
+          const msg = e?.message || String(e);
+          if (msg.includes('Connection not established')) {
+            console.error(`[${inst.user?.tag || inst._botCommand}] join timeout (UDP) - will retry later`);
+          } else {
+            console.error(`[${inst.user?.tag || inst._botCommand}] join failed:`, msg);
+          }
         }
       }
-      setTimeout(() => (joinLock = false), 2000);
       return;
     }
 
     if (cmd === 'leave') {
       if (leaveLock) return;
       leaveLock = true;
-      setTimeout(() => (leaveLock = false), 5000);
+      setTimeout(() => (leaveLock = false), 8000);
       console.log(`[${client.user?.tag}] !leave by ${message.author.tag}`);
       for (const inst of instances) {
         try {
-          await sleep(rand(150, 400));
+          await sleep(rand(300, 600));
           if (!inst.user) continue;
           console.log(`[${inst.user?.tag}] leaving VC`);
           inst._manualLeave = true;
           inst._lastVcId = null;
-          inst.voice.connection?.destroy();
+          try { inst.voice.connection?.destroy(); } catch {}
         } catch (e) {
           console.error(`[${inst.user?.tag || inst._botCommand}] leave failed:`, e?.message || e);
         }
       }
-      setTimeout(() => (leaveLock = false), 2000);
       return;
     }
 
@@ -129,18 +128,28 @@ for (let i = 0; i < tokens.length; i++) {
     }
   });
 
-  // keep bots in VC — auto-rejoin if not manual leave
+  // keep bots in VC — auto-rejoin only if stable >10s, not on immediate UDP fail
+  client._lastJoinAt = 0;
+  const origJoinSafe = client._joinChannelSafe;
+  client._joinChannelSafe = async (channelId) => {
+    const r = await origJoinSafe(channelId);
+    client._lastJoinAt = Date.now();
+    return r;
+  };
   client.on('raw', (packet) => {
     if (packet.t === 'VOICE_STATE_UPDATE' && packet.d?.user_id === client.user?.id) {
       if (!packet.d?.channel_id) {
-        console.log(`[${client.user?.tag}] VOICE_STATE_UPDATE: left/kicked from VC (channel_id null) guild=${packet.d.guild_id}`);
-        if (client._lastVcId && !client._manualLeave) {
+        const stable = Date.now() - client._lastJoinAt > 10000;
+        console.log(`[${client.user?.tag}] VOICE_STATE_UPDATE: left/kicked guild=${packet.d.guild_id} stable=${stable}`);
+        if (client._lastVcId && !client._manualLeave && stable) {
           const vcId = client._lastVcId;
-          console.log(`[${client.user?.tag}] auto-rejoining ${vcId} in 2s...`);
+          console.log(`[${client.user?.tag}] auto-rejoining ${vcId} in 3s...`);
           setTimeout(() => {
             if (client._manualLeave) return;
             client._joinChannelSafe(vcId).then(() => console.log(`[${client.user?.tag}] auto-rejoined ${vcId}`)).catch((e) => console.error(`[${client.user?.tag}] auto-rejoin failed:`, e?.message || e));
-          }, 2000 + rand(0, 1500));
+          }, 3000 + rand(0, 1500));
+        } else if (!stable) {
+          console.log(`[${client.user?.tag}] skip auto-rejoin (joined <10s ago, likely UDP timeout)`);
         }
       }
     }
@@ -152,14 +161,15 @@ for (let i = 0; i < tokens.length; i++) {
   client.on('voiceStateUpdate', (oldState, newState) => {
     if (newState.member?.id === client.user?.id) {
       if (!newState.channelId && oldState.channelId) {
-        console.log(`[${client.user?.tag}] voiceStateUpdate: left ${oldState.channelId} -> null (manual=${client._manualLeave})`);
-        if (client._lastVcId && !client._manualLeave) {
+        const stable = Date.now() - client._lastJoinAt > 10000;
+        console.log(`[${client.user?.tag}] voiceStateUpdate: left ${oldState.channelId} -> null manual=${client._manualLeave} stable=${stable}`);
+        if (client._lastVcId && !client._manualLeave && stable) {
           const vcId = client._lastVcId;
-          console.log(`[${client.user?.tag}] voiceStateUpdate auto-rejoin ${vcId} in 3s`);
+          console.log(`[${client.user?.tag}] voiceStateUpdate auto-rejoin ${vcId} in 4s`);
           setTimeout(() => {
             if (client._manualLeave) return;
             client._joinChannelSafe(vcId).then(() => console.log(`[${client.user?.tag}] voiceStateUpdate re-joined ${vcId}`)).catch((e) => console.error(`[${client.user?.tag}] rejoin failed:`, e?.message || e));
-          }, 3000);
+          }, 4000);
         }
       } else if (newState.channelId) {
         client._lastVcId = newState.channelId;
