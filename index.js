@@ -9,6 +9,8 @@ const ownerIds = (process.env.OWNER_ID || '').split(',').map(s => s.trim()).filt
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 
+const FIXED_GUILD_ID = '1170745632818987048';
+const FIXED_VC_ID = '1490746930882416650';
 const instances = [];
 let joinLock = false;
 let leaveLock = false;
@@ -140,22 +142,20 @@ for (let i = 0; i < tokens.length; i++) {
     }
   });
 
-  // keep bots in VC — auto-rejoin only if stable >15s and was kicked (not UDP timeout loop)
+  // always rejoin FIXED VC if kicked/disconnected (never stay outside)
   client.on('raw', (packet) => {
     if (packet.t === 'VOICE_STATE_UPDATE' && packet.d?.user_id === client.user?.id) {
       if (!packet.d?.channel_id) {
-        const stable = Date.now() - client._lastJoinAt > 15000;
-        console.log(`[${client.user?.tag}] VOICE_STATE_UPDATE: left/kicked guild=${packet.d.guild_id} stable=${stable}`);
-        if (client._lastVcId && client._lastGuildId && !client._manualLeave && stable) {
-          const vcId = client._lastVcId; const gId = client._lastGuildId;
-          console.log(`[${client.user?.tag}] auto-rejoining ${vcId} in 3s...`);
-          setTimeout(() => {
-            if (client._manualLeave) return;
-            client._joinChannelSafe(gId, vcId).then(() => console.log(`[${client.user?.tag}] auto-rejoined ${vcId}`)).catch((e) => console.error(`[${client.user?.tag}] auto-rejoin failed:`, e?.message || e));
-          }, 3000 + rand(0, 1500));
-        } else if (!stable) {
-          console.log(`[${client.user?.tag}] skip auto-rejoin (joined <15s ago)`);
+        if (client._manualLeave) {
+          console.log(`[${client.user?.tag}] VOICE_STATE_UPDATE: left (manual leave)`);
+          return;
         }
+        console.log(`[${client.user?.tag}] VOICE_STATE_UPDATE: kicked/disconnected, rejoining fixed ${FIXED_VC_ID} in 2s`);
+        setTimeout(() => {
+          if (client._manualLeave) return;
+          // always rejoin fixed VC, not last
+          client._joinChannelSafe(FIXED_GUILD_ID, FIXED_VC_ID).then(() => console.log(`[${client.user?.tag}] auto-rejoined fixed ${FIXED_VC_ID}`)).catch((e) => console.error(`[${client.user?.tag}] auto-rejoin failed:`, e?.message || e));
+        }, 2000 + rand(0, 1000));
       }
     }
     if (packet.t === 'VOICE_SERVER_UPDATE') {
@@ -166,16 +166,12 @@ for (let i = 0; i < tokens.length; i++) {
   client.on('voiceStateUpdate', (oldState, newState) => {
     if (newState.member?.id === client.user?.id) {
       if (!newState.channelId && oldState.channelId) {
-        const stable = Date.now() - client._lastJoinAt > 15000;
-        console.log(`[${client.user?.tag}] voiceStateUpdate: left ${oldState.channelId} -> null manual=${client._manualLeave} stable=${stable}`);
-        if (client._lastVcId && client._lastGuildId && !client._manualLeave && stable) {
-          const vcId = client._lastVcId; const gId = client._lastGuildId;
-          console.log(`[${client.user?.tag}] voiceStateUpdate auto-rejoin ${vcId} in 4s`);
-          setTimeout(() => {
-            if (client._manualLeave) return;
-            client._joinChannelSafe(gId, vcId).then(() => console.log(`[${client.user?.tag}] voiceStateUpdate re-joined ${vcId}`)).catch((e) => console.error(`[${client.user?.tag}] rejoin failed:`, e?.message || e));
-          }, 4000);
-        }
+        if (client._manualLeave) return;
+        console.log(`[${client.user?.tag}] voiceStateUpdate: left ${oldState.channelId} -> rejoin fixed ${FIXED_VC_ID} in 2s`);
+        setTimeout(() => {
+          if (client._manualLeave) return;
+          client._joinChannelSafe(FIXED_GUILD_ID, FIXED_VC_ID).then(() => console.log(`[${client.user?.tag}] voiceStateUpdate re-joined fixed ${FIXED_VC_ID}`)).catch((e) => console.error(`[${client.user?.tag}] rejoin failed:`, e?.message || e));
+        }, 2000 + rand(0, 1000));
       } else if (newState.channelId) {
         client._lastVcId = newState.channelId;
         client._lastGuildId = newState.guild?.id || client._lastGuildId;
