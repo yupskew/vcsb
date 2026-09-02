@@ -36,7 +36,7 @@ for (let i = 0; i < tokens.length; i++) {
   client._joinChannelSafe = async (channelId) => {
     client._manualLeave = false;
     client._lastVcId = channelId;
-    const conn = await client.voice.joinChannel(channelId, { selfDeaf: true, selfMute: true });
+    const conn = await client.voice.joinChannel(channelId, { selfDeaf: false, selfMute: true });
     // attach once per connection
     if (conn && !conn._logged) {
       conn._logged = true;
