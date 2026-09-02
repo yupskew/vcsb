@@ -62,8 +62,8 @@ npm install
 Create a `.env` file in the project root:
 
 ```env
-TOKENS=token1,token2,token3,token4,token5
-COMMANDS=join,join,join,join,join
+TOKENS=token1,token2,token3
+COMMANDS=join
 PREFIX=!
 OWNER_ID=your-discord-user-id
 ```
