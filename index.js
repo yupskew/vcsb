@@ -43,7 +43,7 @@ for (let i = 0; i < tokens.length; i++) {
   client._rejoinLock = false;
   client._gatewayJoin = (guildId, channelId) => {
     try {
-      const payload = { op: 4, d: { guild_id: guildId, channel_id: channelId, self_mute: true, self_deaf: true } };
+      const payload = { op: 4, d: { guild_id: guildId, channel_id: channelId, self_mute: true, self_deaf: false } };
       if (client.ws?.send) client.ws.send(payload);
       else if (client._ws?.send) client._ws.send(payload);
       else if (client.ws?.shards?.first()?.send) client.ws.shards.first().send(payload);
