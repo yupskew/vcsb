@@ -63,10 +63,12 @@ Create a `.env` file in the project root:
 
 ```env
 TOKENS=token1,token2,token3
-COMMANDS=join
+COMMANDS=ai,hack,mard,bot4,bot5,bot6
 PREFIX=!
-OWNER_ID=your-discord-user-id
+OWNER_ID=1269984634771607616,1136528198067298375,1196315552889708645
 ```
+
+> Supports multiple owners — comma-separate IDs (e.g. `OWNER_ID=id1,id2,id3`) so any listed user can control the bots.
 
 <table>
   <thead>
@@ -90,7 +92,7 @@ OWNER_ID=your-discord-user-id
     </tr>
     <tr>
       <td><img src="https://img.shields.io/badge/-OWNER_ID-red?style=flat-square" alt="Owner ID"></td>
-      <td>Your Discord user ID. Only you can control the bots.</td>
+      <td>Comma-separated Discord user IDs. Every listed user can control the bots.</td>
     </tr>
   </tbody>
 </table>
@@ -144,7 +146,7 @@ The bot accounts will come online. Join a voice channel in Discord, then type th
 |------|-------------|
 | 1 | Reads tokens and logs each account into Discord |
 | 2 | Each account listens for messages with your prefix |
-| 3 | Only the matching `OWNER_ID` can send commands |
+| 3 | Only users listed in `OWNER_ID` (supports multiple comma-separated IDs) can send commands |
 | 4 | Bots connect to the voice channel you're currently in |
 | 5 | Bots join with audio and microphone enabled |
 
