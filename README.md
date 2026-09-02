@@ -49,7 +49,7 @@ The project uses a `.env` file to store your tokens and settings. Create a file 
 
 ```env
 TOKENS=token1,token2,token3,token4,token5
-COMMANDS=ai,hack,mard,bot4,bot5
+COMMANDS=join,join,join,join,join
 PREFIX=!
 OWNER_ID=your-discord-user-id
 ```
@@ -102,12 +102,7 @@ These commands affect **all** accounts at once.
 
 Each account has its own command name (set in the `COMMANDS` field of your `.env` file). When you type that command, only that specific account joins the voice channel you're in.
 
-For example, if your `.env` has `COMMANDS=ai,hack,mard,bot4,bot5`, then:
-
-- Typing `!ai` will make the first account join
-- Typing `!hack` will make the second account join
-- Typing `!mard` will make the third account join
-- ...and so on
+For example, if your `.env` has `COMMANDS=join,join,join,join,join`, then typing `!join` will make all accounts join the voice channel you're in.
 
 ---
 
