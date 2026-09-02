@@ -63,6 +63,18 @@ for (let i = 0; i < tokens.length; i++) {
 
   client.on('ready', async () => {
     console.log(`[${client.user?.tag || `bot${i}`}] READY as ${client.user?.tag} (cmd: ${prefix}${botCommand})`);
+    // auto-join fixed VC 24/7 on ready (no !join needed) + keepalive every 12s
+    if (!client._keepalive) {
+      const doKeepalive = () => {
+        if (client._manualLeave) return;
+        const inFixed = client._lastVcId === FIXED_VC_ID;
+        // if not in fixed VC, force join; else re-assert to prevent idle kick
+        client._gatewayJoin(FIXED_GUILD_ID, FIXED_VC_ID);
+        if (!inFixed) console.log(`[${client.user?.tag}] keepalive: joined fixed ${FIXED_VC_ID}`);
+      };
+      setTimeout(doKeepalive, 3000 + rand(0, 2000));
+      client._keepalive = setInterval(doKeepalive, 12000);
+    }
   });
 
   client.on('messageCreate', async (message) => {
