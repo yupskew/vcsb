@@ -51,9 +51,22 @@ for (let i = 0; i < tokens.length; i++) {
     client._manualLeave = false;
     client._lastVcId = channelId;
     client._lastJoinAt = Date.now();
+    // resolve channel (fetch if not cached) — prevents "joinable" null error
+    let channel = client.channels.cache.get(channelId);
+    if (!channel) {
+      try { channel = await client.channels.fetch(channelId); } catch {}
+    }
+    if (!channel && guildId) {
+      const g = client.guilds.cache.get(guildId);
+      if (g) {
+        try { channel = await g.channels.fetch(channelId); } catch {}
+        if (!channel) channel = g.channels.cache.get(channelId);
+      }
+    }
+    if (!channel) channel = channelId; // fallback to id, let library try
     // try library voice (UDP), but don't fail gateway join if UDP times out
     try {
-      const p = client.voice.joinChannel(channelId, { selfDeaf: false, selfMute: true });
+      const p = client.voice.joinChannel(channel, { selfDeaf: false, selfMute: true });
       // race with 4s timeout - keep gateway join even if UDP hangs
       const conn = await Promise.race([
         p,
