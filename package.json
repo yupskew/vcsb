@@ -1,11 +1,14 @@
 {
   "name": "vc-joiner",
   "version": "1.0.0",
-  "description": "Multi-token VC joiner selfbot",
+  "description": "Multi-token Discord VC joiner — easy to read, 24/7 keepalive, gateway-only voice",
   "main": "index.js",
+  "keywords": ["discord", "selfbot", "voice", "vc", "discord.js-selfbot-v13"],
   "scripts": {
     "start": "node index.js",
-    "dev": "node index.js"
+    "dev": "node --watch index.js",
+    "check": "node --check index.js && echo \"syntax OK\"",
+    "test:tokens": "node -e \"require('dotenv').config(); console.log(require('./index.js'))\""
   },
   "dependencies": {
     "discord.js-selfbot-v13": "^3.7.1",
